@@ -38,8 +38,8 @@ const badge = (s) => `<span class="badge" data-s="${esc(s)}">${esc(s)}</span>`;
 const opts = (list, sel, blank) => (blank ? `<option value="">${esc(blank)}</option>` : "") + list.map((x) => `<option ${x === sel ? "selected" : ""}>${esc(x)}</option>`).join("");
 
 /* ---------- 라우터 ---------- */
-const view = { filters: { q: "", year: "", region: "", type: "", category: "", status: "전체", limit: 40 }, dashYear: String(new Date().getFullYear()), draft: null, step: 0, imp: null, exp: { from: `${new Date().getFullYear()}-01-01`, to: todayIso() } };
-function route() {
+const view = { filters: { q: "", year: "", region: "", type: "", category: "", status: "전체", sort: "latest", limit: 60 }, dashYear: String(new Date().getFullYear()), draft: null, step: 0, imp: null, exp: { from: `${new Date().getFullYear()}-01-01`, to: todayIso() } };
+function route(keepScroll) {
   if (!S) return;
   const h = location.hash.replace(/^#/, "") || "/";
   const [, seg, arg] = h.split("/");
@@ -53,7 +53,7 @@ function route() {
   else if (seg === "import") main.innerHTML = vImport();
   else if (seg === "settings") main.innerHTML = vSettings();
   else main.innerHTML = `<div class="panel empty"><b>없는 화면입니다</b>왼쪽 메뉴에서 이동해 주세요.</div>`;
-  window.scrollTo(0, 0);
+  if (!keepScroll) window.scrollTo(0, 0);
 }
 
 /* 신청 등록 때 입력하는 모든 항목 (목록 CSV·대시보드 엑셀 공통) */
@@ -210,7 +210,11 @@ function filtered() {
     if (f.status !== "전체" && appStatus(a) !== f.status) return false;
     if (q && ![a.title, a.company, a.applicant.name, a.id, a.director].join(" ").toLowerCase().includes(q)) return false;
     return true;
-  }).sort((a, b) => (a.receivedAt < b.receivedAt ? 1 : a.receivedAt > b.receivedAt ? -1 : a.id < b.id ? 1 : -1));
+  }).sort((a, b) => {
+    if (f.sort === "reg") return a.id < b.id ? -1 : 1; /* 등록순: 접수번호가 작은 것부터 */
+    if (f.sort === "oldest") return a.receivedAt < b.receivedAt ? -1 : a.receivedAt > b.receivedAt ? 1 : a.id < b.id ? -1 : 1;
+    return a.receivedAt < b.receivedAt ? 1 : a.receivedAt > b.receivedAt ? -1 : a.id < b.id ? 1 : -1; /* 최신순: 접수일이 늦은 것부터 */
+  });
 }
 function vList() {
   const f = view.filters;
@@ -222,9 +226,9 @@ function vList() {
     const st = appStatus(a);
     return `<a class="row" href="#/apps/${encodeURIComponent(a.id)}">
       <span class="no">${a.id}</span>
-      <span><span class="t">${esc(a.title)}</span><br><span class="s">${esc(a.company)} · ${esc(a.type)}</span></span>
-      <span><span class="t" style="font-weight:600">${esc(a.applicant.name)}</span><br><span class="s">${esc(a.supports.map((s) => s.region).join(", "))}</span></span>
-      <span><span class="t" style="font-weight:600">${fdate(a.receivedAt)}</span><br><span class="s">${esc(a.assignee)}</span></span>
+      <span class="cell"><span class="t">${esc(a.title)}</span><span class="s"> · ${esc(a.company)} · ${esc(a.type)}</span></span>
+      <span class="cell"><span class="t2">${esc(a.applicant.name)}</span><span class="s"> · ${esc(a.supports.map((x) => x.region).join(", "))}</span></span>
+      <span class="cell"><span class="t2">${fdate(a.receivedAt)}</span><span class="s"> · ${esc(a.assignee || "-")}</span></span>
       ${badge(st)}</a>`;
   }).join("");
   return `
@@ -238,6 +242,7 @@ function vList() {
     <label class="field"><span>지역</span><select data-act="flt" data-k="region">${opts(REGIONS, f.region, "전체")}</select></label>
     <label class="field"><span>작품 종류</span><select data-act="flt" data-k="type">${opts(TYPES, f.type, "전체")}</select></label>
     <label class="field"><span>업무 분류</span><select data-act="flt" data-k="category">${opts(CATEGORIES, f.category, "전체")}</select></label>
+    <label class="field"><span>정렬</span><select data-act="flt" data-k="sort">${[["latest", "최신순 (접수일)"], ["oldest", "오래된순 (접수일)"], ["reg", "등록순 (접수번호)"]].map(([v, t]) => `<option value="${v}" ${f.sort === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>
     <button class="btn sm" data-act="reset" style="height:44px">초기화</button>
   </div>
   <div class="tabs" role="group" aria-label="진행 상태">${tabs}</div>
@@ -459,11 +464,17 @@ function parseLegacy(wb) {
   const norm = (x) => String(x ?? "").replace(/\s+/g, "").toLowerCase(), map = new Map();
   sv.forEach((r) => { const k = norm(r["작품명"]) + "|" + norm(r["신청자 이름"]); if (!map.has(k)) map.set(k, []); map.get(k).push(r); });
   const dayOf = (v) => xlDate(typeof v === "number" ? Math.floor(v) : v);
-  const existing = new Set(S.apps.map((a) => a.id)), apps = [], skipped = [], warns = [];
+  const existing = new Set(S.apps.map((a) => a.id)), apps = [], skipped = [], warns = [], dups = [];
   const g = (row, k) => (row ? String(row[k] ?? "").trim() : "");
+  const seenKey = new Set();
+  /* 같은 작품·신청자·접수일·요청 내용이 반복된 행은 시트의 중복 생성 오류로 보고 첫 행만 남긴다 */
+  const dupKey = (title, name, day, req) => [norm(title), norm(name), day, norm(req).slice(0, 120)].join("|");
   pg.forEach((r) => {
     const id = String(r["신청번호"]).trim();
     if (existing.has(id)) { skipped.push(id); return; }
+    const dk = dupKey(r["작품명"], r["신청자 이름"], dayOf(r["접수일"]), r["지원 요청사항"]);
+    if (seenKey.has(dk)) { dups.push(id); return; }
+    seenKey.add(dk);
     const cands = map.get(norm(r["작품명"]) + "|" + norm(r["신청자 이름"])) || [], recv = dayOf(r["접수일"]) || todayIso();
     const s = cands.find((c) => dayOf(c["타임스탬프"]) === recv) || cands[0] || null;
     let regs = xlRegions(g(r, "신청 지역")).out; if (!regs.length && s) regs = xlRegions(g(s, "신청 지역")).out;
@@ -473,9 +484,28 @@ function parseLegacy(wb) {
     if (!s) warns.push(id);
     apps.push({ id, receivedAt: recv, source: "이관", title: g(r, "작품명"), director: g(s, "감독") || "-", cast: g(r, "배우") || g(s, "주연배우") || "-", kind: KINDS.includes(g(s, "작품구분")) ? g(s, "작품구분") : "국내", type: g(r, "작품종류") || g(s, "작품종류") || "기타", media: g(s, "1차 배급매체") || "-", budget: g(s, "예산규모") || "-", staff: Number(g(s, "스탭 인원 수")) || 0, crankIn: (s && xlDate(s["크랭크인"])) || "", crankUp: (s && xlDate(s["크랭크업"])) || "", synopsis: g(s, "작품내용") || "-", company: g(r, "제작사 명") || g(s, "제작사명") || "-", applicant: { name: g(r, "신청자 이름") || "-", role: g(r, "직책 또는 소속") || "-", phone: ph, email: g(r, "신청자 이메일") || "-" }, request: g(r, "지원 요청사항") || g(s, "지원 요청사항") || "-", supports: (regs.length ? regs : ["미정"]).map((x) => ({ region: x, status })), assignee: "", files, drivePath: g(r, "첨부파일") });
   });
+  /* 진행관리에 아직 올라오지 않은 설문지 응답은 새 접수번호로 등록 */
+  const pgKeys = new Set(pg.map((r) => norm(r["작품명"]) + "|" + norm(r["신청자 이름"])));
+  const maxNo = {};
+  [...existing, ...apps.map((a) => a.id)].forEach((id) => { const m = /^(\d{4})-(\d+)$/.exec(id); if (m) maxNo[m[1]] = Math.max(maxNo[m[1]] || 0, +m[2]); });
+  const fresh = [];
+  sv.forEach((r) => {
+    if (pgKeys.has(norm(r["작품명"]) + "|" + norm(r["신청자 이름"]))) return;
+    const recv = dayOf(r["타임스탬프"]) || todayIso();
+    const dk = dupKey(r["작품명"], r["신청자 이름"], recv, r["지원 요청사항"]);
+    if (seenKey.has(dk)) { dups.push("응답 " + g(r, "작품명")); return; }
+    seenKey.add(dk);
+    const y = recv.slice(0, 4); maxNo[y] = (maxNo[y] || 0) + 1;
+    const id = `${y}-${pad(maxNo[y]).padStart(3, "0")}`;
+    const regs = xlRegions(g(r, "신청 지역")).out, files = [];
+    [["제작기획서(작품소개서), 촬영계획서", "제작기획서·촬영계획서"], ["시나리오, 스탭리스트, 장소구분표 등 기타자료", "시나리오·스탭리스트 등 기타자료"]].forEach(([col, label]) => { const u = safeUrl(g(r, col)); if (u) files.push({ name: label, url: u }); });
+    let ph = g(r, "신청자 연락처"); if (/^\d{9,11}$/.test(ph) && !ph.startsWith("0")) ph = "0" + ph;
+    const a = { id, receivedAt: recv, source: "이관", title: g(r, "작품명"), director: g(r, "감독") || "-", cast: g(r, "주연배우") || "-", kind: KINDS.includes(g(r, "작품구분")) ? g(r, "작품구분") : "국내", type: g(r, "작품종류") || "기타", media: g(r, "1차 배급매체") || "-", budget: g(r, "예산규모") || "-", staff: Number(g(r, "스탭 인원 수")) || 0, crankIn: xlDate(r["크랭크인"]) || "", crankUp: xlDate(r["크랭크업"]) || "", synopsis: g(r, "작품내용") || "-", company: g(r, "제작사명") || "-", applicant: { name: g(r, "신청자 이름") || "-", role: g(r, "직책 또는 소속") || "-", phone: ph, email: g(r, "신청자 이메일") || "-" }, request: g(r, "지원 요청사항") || "-", supports: (regs.length ? regs : ["미정"]).map((x) => ({ region: x, status: "접수완료" })), assignee: "", files, drivePath: "" };
+    apps.push(a); fresh.push(id);
+  });
   const ids = new Set([...existing, ...apps.map((a) => a.id)]);
   const memos = get("메모이력").filter((r) => String(r["메모내용"]).trim() && ids.has(String(r["신청번호"]).trim())).map((r) => ({ id: uuid(), appNo: String(r["신청번호"]).trim(), date: dayOf(r["날짜"]) || todayIso(), author: g(r, "작성자"), method: g(r, "진행방법") || "기타", category: g(r, "업무분류") || "기타", region: g(r, "지역"), text: g(r, "메모내용"), statusChange: null }));
-  return { apps, skipped, warns, memos };
+  return { apps, skipped, warns, memos, dups, fresh };
 }
 function readLegacyFile(file) {
   if (typeof XLSX === "undefined") return toast("엑셀 기능을 불러오지 못했어요. 인터넷 연결을 확인해 주세요");
@@ -513,7 +543,7 @@ function vImport() {
   if (lg) {
     const withLinks = lg.apps.filter((a) => a.files.length).length, sample = lg.apps.slice(0, 8).map((a) => `<tr><td>${esc(a.id)}</td><td>${esc(a.title)}</td><td>${esc(a.applicant.name)}</td><td>${esc(a.receivedAt)}</td><td>${esc(a.supports.map((x) => x.region).join(", "))}</td></tr>`).join("");
     legacy = `<section class="panel" style="margin-top:24px"><h2 class="panel-title">이관 미리보기: ${esc(lg.name)}</h2>
-      <p class="panel-note">신청 <b>${lg.apps.length}건</b>과 메모 <b>${lg.memos.length}건</b>을 옮겨요. 이미 있는 접수번호 ${lg.skipped.length}건은 건너뜁니다. 첨부 링크가 있는 신청 ${withLinks}건${lg.warns.length ? `, 신청서 원문을 찾지 못한 신청 ${lg.warns.length}건(감독·작품내용 등이 비어요)` : ""}. 아직 저장되지 않았어요.</p>
+      <p class="panel-note">신청 <b>${lg.apps.length}건</b>과 메모 <b>${lg.memos.length}건</b>을 옮겨요. 이미 있는 접수번호 ${lg.skipped.length}건은 건너뜁니다. <b>중복으로 보고 뺀 행 ${lg.dups.length}건</b>(같은 작품·신청자·접수일·요청 내용 반복), 진행관리에 없어 <b>새 접수번호로 등록하는 응답 ${lg.fresh.length}건</b>. 첨부 링크가 있는 신청 ${withLinks}건${lg.warns.length ? `, 신청서 원문을 찾지 못한 신청 ${lg.warns.length}건(감독·작품내용 등이 비어요)` : ""}. 아직 저장되지 않았어요.</p>
       <div class="tblwrap"><table class="tbl"><thead><tr><th>접수번호</th><th>작품명</th><th>신청자</th><th>접수일</th><th>지역</th></tr></thead><tbody>${sample}</tbody></table></div>
       <div class="wiz-nav"><button class="btn" data-act="lgcancel">취소</button><button class="btn rec" data-act="lgcommit" ${lg.apps.length ? "" : "disabled"}><span class="rec-dot"></span>${lg.apps.length}건 이관하기</button></div></section>`;
   }
@@ -553,9 +583,9 @@ function addMemo(a, o) { const m = { id: uuid(), appNo: a.id, date: todayIso(), 
 document.addEventListener("click", (e) => {
   const el = e.target.closest("[data-act]"); if (!el) return;
   const act = el.dataset.act;
-  if (act === "tab") { view.filters.status = el.dataset.v; view.filters.limit = 40; route(); }
-  else if (act === "more") { view.filters.limit += 40; route(); }
-  else if (act === "reset") { view.filters = { q: "", year: "", region: "", type: "", category: "", status: "전체", limit: 40 }; route(); }
+  if (act === "tab") { view.filters.status = el.dataset.v; view.filters.limit = 60; route(); }
+  else if (act === "more") { const y = window.scrollY; view.filters.limit += 60; route(true); window.scrollTo(0, y); }
+  else if (act === "reset") { view.filters = { q: "", year: "", region: "", type: "", category: "", status: "전체", sort: "latest", limit: 60 }; route(); }
   else if (act === "csv") csv();
   else if (act === "export") { view.exp.from = $("#expfrom").value; view.exp.to = $("#expto").value; exportDashboard(); }
   else if (act === "exprange") { const n = new Date(), y = n.getFullYear(); view.exp = el.dataset.v === "year" ? { from: `${y}-01-01`, to: todayIso() } : el.dataset.v === "month" ? { from: `${y}-${pad(n.getMonth() + 1)}-01`, to: todayIso() } : { from: [...S.apps].map((a) => a.receivedAt).sort()[0], to: todayIso() }; route(); }
@@ -572,7 +602,7 @@ document.addEventListener("click", (e) => {
 document.addEventListener("change", (e) => {
   const el = e.target; const act = el.dataset.act;
   if (act === "dyear") { view.dashYear = el.value; route(); }
-  else if (act === "flt") { view.filters[el.dataset.k] = el.value; view.filters.limit = 40; route(); }
+  else if (act === "flt") { view.filters[el.dataset.k] = el.value; view.filters.limit = 60; route(); }
   else if (act === "asg") { const a = curApp(), v = el.value; a.assignee = v; dbRun(async () => q(await sb.from("applications").update({ assignee: v }).eq("id", a.id)), v ? `담당자를 ${v}로 바꿨어요` : "담당자를 비웠어요"); }
   else if (act === "sup") { const a = curApp(), sp = a.supports[Number(el.dataset.i)], to = el.value; if (to === sp.status) return; const from = sp.status, region = sp.region; sp.status = to; const m = addMemo(a, { region, text: `${region} 지원 건 상태를 변경했습니다.`, statusChange: { from, to } }); route(); dbRun(async () => { q(await sb.from("supports").update({ status: to }).eq("application_id", a.id).eq("region", region)); await persistMemo(m); }, `${region}: ${to}`); }
   else if (el.id === "lg") { if (el.files[0]) readLegacyFile(el.files[0]); }
@@ -582,7 +612,7 @@ document.addEventListener("change", (e) => {
   else if (el.id === "author") { S.author = el.value; try { localStorage.setItem(AUTHOR_KEY, el.value); } catch (x) { /* 무시 */ } if ($("#memo")) route(); }
   else if (el.name === "undecided") { readStep(); if (el.checked) { view.draft.regions = []; $$("#regchips .chip").forEach((c) => c.setAttribute("aria-pressed", "false")); } }
 });
-document.addEventListener("input", (e) => { if (e.target.id === "fq") { view.filters.q = e.target.value; view.filters.limit = 40; clearTimeout(input.t); input.t = setTimeout(() => { const pos = e.target.selectionStart; route(); const n = $("#fq"); n.focus(); n.setSelectionRange(pos, pos); }, 250); } });
+document.addEventListener("input", (e) => { if (e.target.id === "fq") { view.filters.q = e.target.value; view.filters.limit = 60; clearTimeout(input.t); input.t = setTimeout(() => { const pos = e.target.selectionStart; route(); const n = $("#fq"); n.focus(); n.setSelectionRange(pos, pos); }, 250); } });
 const input = {};
 document.addEventListener("submit", (e) => {
   if (!S) return;

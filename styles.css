@@ -156,14 +156,14 @@ select { appearance: none; padding-right: 38px;
 .list-plain b { font-weight: 800; }
 
 /* ---------- list ---------- */
-.filters { display: grid; grid-template-columns: 1.6fr repeat(4, 1fr) auto; gap: 14px; align-items: end; margin-bottom: 20px; }
+.filters { display: grid; grid-template-columns: 1.5fr repeat(5, 1fr) auto; gap: 14px; align-items: end; margin-bottom: 20px; }
 .tabs { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
 .tab { border: 0; background: var(--base); box-shadow: var(--raise-1); padding: 9px 16px; border-radius: 999px; font-weight: 700; display: inline-flex; gap: 8px; align-items: center; }
 .tab[aria-pressed="true"] { box-shadow: var(--press); }
 .tab[aria-pressed="true"]::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--rec); }
 .tab .c { color: var(--ink-2); font-size: 0.8125rem; }
 
-.rows { display: flex; flex-direction: column; gap: 14px; }
+.rows { display: flex; flex-direction: column; gap: 8px; }
 .row {
   display: grid; grid-template-columns: 96px 1.7fr 1.2fr 1.1fr 130px; gap: 14px; align-items: center;
   padding: 16px 22px; border-radius: var(--r-md); background: var(--base); box-shadow: var(--raise-1);
@@ -294,3 +294,15 @@ body.locked .shell { display: none; }
 a.nm { text-decoration: none; }
 a.nm:hover { text-decoration: underline; }
 @media (max-width: 860px) { .flink { grid-template-columns: 1fr; } }
+
+/* ---------- 목록 한 줄 보기 (촘촘하게) ---------- */
+.row { grid-template-columns: 88px 1.9fr 1.3fr 1.1fr 104px; gap: 12px; padding: 8px 16px; box-shadow: 3px 3px 8px var(--dark), -3px -3px 8px var(--light); }
+.row:hover { box-shadow: var(--press-s); }
+.row .cell { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .t { font-weight: 700; }
+.row .t2 { font-weight: 600; }
+.row .s { color: var(--ink-2); font-size: 0.8125rem; }
+.row .badge { padding: 3px 10px; }
+.row.head { padding-top: 0; padding-bottom: 2px; }
+@media (max-width: 1100px) { .row { grid-template-columns: 84px 1.6fr 1fr 104px; } }
+@media (max-width: 860px) { .row { grid-template-columns: 1fr auto; padding: 10px 14px; } .row .cell { white-space: normal; } }
