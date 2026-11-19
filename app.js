@@ -38,7 +38,7 @@ const badge = (s) => `<span class="badge" data-s="${esc(s)}">${esc(s)}</span>`;
 const opts = (list, sel, blank) => (blank ? `<option value="">${esc(blank)}</option>` : "") + list.map((x) => `<option ${x === sel ? "selected" : ""}>${esc(x)}</option>`).join("");
 
 /* ---------- 라우터 ---------- */
-const view = { filters: { q: "", year: "", region: "", type: "", category: "", status: "전체", sort: "latest", limit: 60 }, dashYear: String(new Date().getFullYear()), draft: null, step: 0, edit: null, imp: null, exp: { from: `${new Date().getFullYear()}-01-01`, to: todayIso() } };
+const view = { filters: { q: "", year: "", region: "", type: "", category: "", status: "전체", sort: "latest", limit: 60 }, dashYear: String(new Date().getFullYear()), draft: null, step: 0, edit: null, memoEdit: null, memoDel: null, sel: new Set(), delConfirm: false, appDel: false, imp: null, exp: { from: `${new Date().getFullYear()}-01-01`, to: todayIso() } };
 function route(keepScroll) {
   if (!S) return;
   const h = location.hash.replace(/^#/, "") || "/";
@@ -54,7 +54,7 @@ function route(keepScroll) {
   else if (seg === "import") main.innerHTML = vImport();
   else if (seg === "settings") main.innerHTML = vSettings();
   else main.innerHTML = `<div class="panel empty"><b>없는 화면입니다</b>왼쪽 메뉴에서 이동해 주세요.</div>`;
-  if (!keepScroll) window.scrollTo(0, 0);
+  if (!keepScroll) { window.scrollTo(0, 0); view.memoEdit = null; view.memoDel = null; view.sel.clear(); view.delConfirm = false; view.appDel = false; }
 }
 
 /* 신청 등록 때 입력하는 모든 항목 (목록 CSV·대시보드 엑셀 공통) */
@@ -225,13 +225,15 @@ function vList() {
   const shown = list.slice(0, f.limit);
   const rows = shown.map((a) => {
     const st = appStatus(a);
-    return `<a class="row" href="#/apps/${encodeURIComponent(a.id)}">
+    return `<div class="rowwrap"><input type="checkbox" class="pick" data-id="${esc(a.id)}" aria-label="${esc(a.id)} 선택" ${view.sel.has(a.id) ? "checked" : ""}><a class="row" href="#/apps/${encodeURIComponent(a.id)}">
       <span class="no">${a.id}</span>
       <span class="cell"><span class="t">${esc(a.title)}</span><span class="s"> · ${esc(a.company)} · ${esc(a.type)}</span></span>
       <span class="cell"><span class="t2">${esc(a.applicant.name)}</span><span class="s"> · ${esc(a.supports.map((x) => x.region).join(", "))}</span></span>
       <span class="cell"><span class="t2">${fdate(a.receivedAt)}</span><span class="s"> · ${esc(a.assignee || "-")}</span></span>
-      ${badge(st)}</a>`;
+      ${badge(st)}</a></div>`;
   }).join("");
+  const nSel = view.sel.size;
+  const bar = nSel ? `<div class="selbar panel"><b>${nSel}건 선택됨</b>${view.delConfirm ? `<span class="warn">${nSel}건을 삭제할까요? 지역별 지원 건과 메모 기록도 함께 지워지고 되돌릴 수 없어요. 드라이브 파일은 그대로 남아요.</span><button class="btn sm rec" data-act="seldelyes">삭제</button><button class="btn sm" data-act="seldelno">취소</button>` : `<button class="btn sm" data-act="seldel">선택 삭제</button><button class="btn sm" data-act="selclear">선택 해제</button>`}</div>` : "";
   return `
   <header class="top">
     <div><h1>신청 목록</h1><p>${list.length}건을 보고 있습니다.</p></div>
@@ -247,7 +249,8 @@ function vList() {
     <button class="btn sm" data-act="reset" style="height:44px">초기화</button>
   </div>
   <div class="tabs" role="group" aria-label="진행 상태">${tabs}</div>
-  ${list.length ? `<div class="rows"><div class="row head" aria-hidden="true"><span>접수번호</span><span>작품</span><span>신청자·지역</span><span>접수일·담당</span><span>상태</span></div>${rows}</div>
+  ${bar}
+  ${list.length ? `<div class="rows"><div class="rowwrap head"><label class="pickall"><input type="checkbox" id="pickall" ${list.length && list.every((a) => view.sel.has(a.id)) ? "checked" : ""} aria-label="현재 목록 ${list.length}건 전체 선택" title="현재 목록 ${list.length}건 전체 선택"></label><div class="row head" aria-hidden="true"><span>접수번호</span><span>작품</span><span>신청자·지역</span><span>접수일·담당</span><span>상태</span></div></div>${rows}</div>
   ${list.length > shown.length ? `<div style="text-align:center;margin-top:22px"><button class="btn" data-act="more">${list.length - shown.length}건 더 보기</button></div>` : ""}` :
   `<div class="panel empty"><b>조건에 맞는 신청이 없습니다</b>검색어나 필터를 바꾸거나 초기화해 보세요.</div>`}`;
 }
@@ -325,6 +328,45 @@ function saveEdit(form) {
   dbRun(async () => { q(await sb.from("applications").update(row).eq("id", a.id)); await persistMemo(m); }, `${work ? "작품 정보" : "신청자 정보"}를 수정했어요`);
 }
 
+/* ---------- 메모 수정 · 삭제 ---------- */
+function memoItem(m, i) {
+  const a = S.apps.find((x) => x.id === m.appNo), first = i === 0 ? "first" : "";
+  if (view.memoEdit === m.id) {
+    const regs = a ? a.supports.map((x) => x.region) : [];
+    return `<li class="${first}"><form class="memo-form memo-edit" data-memo="${esc(m.id)}" novalidate>
+      <label class="field"><span>진행 방법</span><select name="method">${opts(withCur(METHODS, m.method), m.method)}</select></label>
+      <label class="field"><span>업무 분류</span><select name="category">${opts(withCur(CATEGORIES, m.category), m.category)}</select></label>
+      <label class="field"><span>지역</span><select name="region" ${m.statusChange ? "disabled" : ""}>${opts(withCur(regs, m.region), m.region, "전체")}</select>${m.statusChange ? "<small>상태 변경 기록은 지역을 바꿀 수 없어요</small>" : ""}</label>
+      <label class="field"><span>날짜</span><input type="date" name="date" value="${esc(m.date)}"></label>
+      <label class="field wide"><span>메모 <em>*</em></span><textarea name="text">${esc(m.text)}</textarea><span class="err"></span></label>
+      <div class="wide memo-actions"><button type="button" class="btn sm" data-act="memoeditcancel">취소</button><button type="submit" class="btn sm rec">저장</button></div>
+    </form></li>`;
+  }
+  const del = view.memoDel === m.id;
+  const actions = del
+    ? `<span class="warn">${m.statusChange ? "촬영 상태 기록이라 월별 집계에서도 빠져요. 지역 상태는 그대로예요. " : ""}정말 삭제할까요?</span><button class="btn sm rec" data-act="memodelyes" data-id="${esc(m.id)}">삭제</button><button class="btn sm" data-act="memodelno">취소</button>`
+    : `<button class="btn sm" data-act="memoedit" data-id="${esc(m.id)}">수정</button><button class="btn sm" data-act="memodel" data-id="${esc(m.id)}">삭제</button>`;
+  return `<li class="${first}"><div class="meta"><b>${esc(m.author)}</b><span>${fdate(m.date)}</span><span>${esc(m.method)}</span><span>${esc(m.category)}</span>${m.region ? `<span>${esc(m.region)}</span>` : ""}</div><div class="body">${esc(m.text)}</div>${m.statusChange ? `<span class="badge chg" data-s="${esc(m.statusChange.to)}">${esc(m.statusChange.from)} → ${esc(m.statusChange.to)}</span>` : ""}<div class="memo-actions">${actions}</div></li>`;
+}
+function saveMemoEdit(form) {
+  const m = S.memos.find((x) => x.id === form.dataset.memo); if (!m) return;
+  const fd = new FormData(form), text = String(fd.get("text") || "").trim(), date = String(fd.get("date") || "");
+  const err = $(".err", form);
+  if (!text) { err.textContent = "메모 내용을 입력해 주세요"; $('[name="text"]', form).focus(); return; }
+  if (!date) { err.textContent = "날짜를 입력해 주세요"; $('[name="date"]', form).focus(); return; }
+  m.text = text; m.date = date; m.method = String(fd.get("method") || m.method); m.category = String(fd.get("category") || m.category);
+  if (!m.statusChange) m.region = String(fd.get("region") || "");
+  view.memoEdit = null; route(true);
+  dbRun(async () => q(await sb.from("memos").update({ body: m.text, memo_date: m.date, method: m.method, category: m.category, region: m.region }).eq("id", m.id)), "메모를 수정했어요");
+}
+
+/* ---------- 신청 삭제 ---------- */
+function deleteApps(ids) {
+  const set = new Set(ids);
+  S.apps = S.apps.filter((a) => !set.has(a.id)); S.memos = S.memos.filter((m) => !set.has(m.appNo));
+  return dbRun(async () => { for (let i = 0; i < ids.length; i += 100) q(await sb.from("applications").delete().in("id", ids.slice(i, i + 100))); }, `${ids.length}건을 삭제했어요`);
+}
+
 /* ---------- 신청 상세 ---------- */
 function vDetail(id) {
   const a = S.apps.find((x) => x.id === id);
@@ -332,13 +374,13 @@ function vDetail(id) {
   const st = appStatus(a);
   const supports = a.supports.map((s, i) => `<div class="support"><b>${esc(s.region)}</b><select data-act="sup" data-i="${i}" aria-label="${esc(s.region)} 상태">${opts(STATUSES, s.status)}</select></div>`).join("");
   const memos = memosOf(id);
-  const tl = memos.map((m, i) => `<li class="${i === 0 ? "first" : ""}"><div class="meta"><b>${esc(m.author)}</b><span>${fdate(m.date)}</span><span>${esc(m.method)}</span><span>${esc(m.category)}</span>${m.region ? `<span>${esc(m.region)}</span>` : ""}</div><div class="body">${esc(m.text)}</div>${m.statusChange ? `<span class="badge chg" data-s="${esc(m.statusChange.to)}">${esc(m.statusChange.from)} → ${esc(m.statusChange.to)}</span>` : ""}</li>`).join("");
+  const tl = memos.map((m, i) => memoItem(m, i)).join("");
   const files = a.files.map((f) => `<li class="file"><span class="ext">링크</span>${safeUrl(f.url) ? `<a class="nm" href="${esc(safeUrl(f.url))}" target="_blank" rel="noopener noreferrer">${esc(f.name)}</a>` : `<span class="nm">${esc(f.name)}</span>`}</li>`).join("") || `<li class="hint">연결된 첨부 링크가 없습니다.</li>`;
   return `
   <div class="crumb"><a class="btn sm" href="#/apps">← 신청 목록</a></div>
   <header class="top">
     <div><h1>${esc(a.title)}</h1><p>${a.id} · ${esc(a.company)} · ${fdate(a.receivedAt)} 접수 · ${esc(a.source)}${a.legacyNo ? ` · 시트 번호 ${esc(a.legacyNo)}` : ""}</p></div>
-    <div class="top-tools">${badge(st)}<label class="sr" for="asg">담당자</label><select id="asg" data-act="asg" style="width:150px">${opts(S.staff, a.assignee, "담당자 미지정")}</select></div>
+    <div class="top-tools">${badge(st)}${view.appDel ? `<span class="warn">이 신청을 삭제할까요? 지원 건과 메모도 함께 지워지고 되돌릴 수 없어요.</span><button class="btn sm rec" data-act="appdelyes">삭제</button><button class="btn sm" data-act="appdelno">취소</button>` : `<button class="btn sm" data-act="appdel">신청 삭제</button>`}<label class="sr" for="asg">담당자</label><select id="asg" data-act="asg" style="width:150px">${opts(S.staff, a.assignee, "담당자 미지정")}</select></div>
   </header>
   <div class="detail">
     <div class="stack">
@@ -670,6 +712,18 @@ document.addEventListener("click", (e) => {
   else if (act === "lgcommit") commitLegacy();
   else if (act === "edit") { const a = curApp(); if (a) { view.edit = { id: a.id, kind: el.dataset.v }; route(true); const f = $(el.dataset.v === "work" ? "#editwork input" : "#editapp input"); if (f) f.focus(); } }
   else if (act === "editcancel") { view.edit = null; route(true); }
+  else if (act === "seldel") { view.delConfirm = true; route(true); }
+  else if (act === "seldelno") { view.delConfirm = false; route(true); }
+  else if (act === "selclear") { view.sel.clear(); view.delConfirm = false; route(true); }
+  else if (act === "seldelyes") { const ids = [...view.sel]; view.sel.clear(); view.delConfirm = false; route(true); deleteApps(ids); }
+  else if (act === "appdel") { view.appDel = true; route(true); }
+  else if (act === "appdelno") { view.appDel = false; route(true); }
+  else if (act === "appdelyes") { const a = curApp(); if (a) { view.appDel = false; location.hash = "#/apps"; deleteApps([a.id]); } }
+  else if (act === "memoedit") { view.memoEdit = el.dataset.id; view.memoDel = null; route(true); const t = $(".memo-edit textarea"); if (t) t.focus(); }
+  else if (act === "memoeditcancel") { view.memoEdit = null; route(true); }
+  else if (act === "memodel") { view.memoDel = el.dataset.id; view.memoEdit = null; route(true); }
+  else if (act === "memodelno") { view.memoDel = null; route(true); }
+  else if (act === "memodelyes") { const id = el.dataset.id; S.memos = S.memos.filter((x) => x.id !== id); view.memoDel = null; route(true); dbRun(async () => q(await sb.from("memos").delete().eq("id", id)), "메모를 삭제했어요"); }
   else if (act === "lgcancel") { view.legacy = null; route(); }
   else if (act === "reg") { readStep(); const r = el.dataset.v, d = view.draft; d.regions = d.regions.includes(r) ? d.regions.filter((x) => x !== r) : [...d.regions, r]; el.setAttribute("aria-pressed", d.regions.includes(r)); if (d.regions.length) { d.undecided = false; const c = $('#wiz [name="undecided"]'); if (c) c.checked = false; } }
   else if (act === "prev") { readStep(); view.step--; route(); }
@@ -682,6 +736,8 @@ document.addEventListener("change", (e) => {
   else if (act === "flt") { view.filters[el.dataset.k] = el.value; view.filters.limit = 60; route(); }
   else if (act === "asg") { const a = curApp(), v = el.value; a.assignee = v; dbRun(async () => q(await sb.from("applications").update({ assignee: v }).eq("id", a.id)), v ? `담당자를 ${v}로 바꿨어요` : "담당자를 비웠어요"); }
   else if (act === "sup") { const a = curApp(), sp = a.supports[Number(el.dataset.i)], to = el.value; if (to === sp.status) return; const from = sp.status, region = sp.region; sp.status = to; const m = addMemo(a, { region, text: `${region} 지원 건 상태를 변경했습니다.`, statusChange: { from, to } }); route(); dbRun(async () => { q(await sb.from("supports").update({ status: to }).eq("application_id", a.id).eq("region", region)); await persistMemo(m); }, `${region}: ${to}`); }
+  else if (el.classList.contains("pick")) { if (el.checked) view.sel.add(el.dataset.id); else view.sel.delete(el.dataset.id); view.delConfirm = false; route(true); }
+  else if (el.id === "pickall") { const ids = filtered().map((a) => a.id); ids.forEach((id) => (el.checked ? view.sel.add(id) : view.sel.delete(id))); view.delConfirm = false; route(true); }
   else if (el.id === "lg") { if (el.files[0]) readLegacyFile(el.files[0]); }
   else if (el.id === "xl") { if (el.files[0]) readExcelFile(el.files[0]); }
   else if (el.id === "expfrom") view.exp.from = el.value;
@@ -701,6 +757,7 @@ document.addEventListener("submit", (e) => {
     let sc = null; if (ns) { const sp = a.supports.find((x) => x.region === rg); if (sp && sp.status !== ns) { sc = { from: sp.status, to: ns }; sp.status = ns; } }
     const m = addMemo(a, { date, method: fd.get("method"), category: fd.get("category"), region: rg, text, statusChange: sc }); route();
     dbRun(async () => { if (sc) q(await sb.from("supports").update({ status: ns }).eq("application_id", a.id).eq("region", rg)); await persistMemo(m); }, sc ? `메모를 저장하고 ${rg}을(를) ${ns}로 바꿨어요` : "메모를 저장했어요"); }
+  else if (f.classList.contains("memo-edit")) { e.preventDefault(); saveMemoEdit(f); }
   else if (f.id === "editwork" || f.id === "editapp") { e.preventDefault(); saveEdit(f); }
   else if (f.id === "flink") { e.preventDefault(); const a = curApp(), fd = new FormData(f), url = safeUrl(fd.get("furl")), name = (fd.get("fname") || "").trim() || "첨부파일"; if (!url) return toast("http(s)로 시작하는 링크를 넣어 주세요"); a.files = [...a.files, { name, url }]; const files = a.files; route(); dbRun(async () => q(await sb.from("applications").update({ files }).eq("id", a.id)), "첨부 링크를 추가했어요"); }
   else if (f.id === "staff") { e.preventDefault(); const fd = new FormData(f); const names = S.staff.map((_, i) => (fd.get("s" + i) || "").trim() || S.staff[i]); const map = Object.fromEntries(S.staff.map((o, i) => [o, names[i]])); S.apps.forEach((a) => (a.assignee = map[a.assignee] || a.assignee)); S.memos.forEach((m) => (m.author = map[m.author] || m.author)); S.author = map[S.author] || names[0]; S.staff = names; fillAuthor(); route();

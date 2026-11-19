@@ -310,3 +310,18 @@ a.nm:hover { text-decoration: underline; }
 /* ---------- 패널 머리글 (제목 + 수정 버튼) ---------- */
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .panel-head .panel-title { margin-bottom: 0; }
+
+/* ---------- 메모 수정 · 삭제 ---------- */
+.memo-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.memo-actions .warn { color: var(--rec); font-weight: 700; font-size: 0.8125rem; }
+.timeline .memo-edit { margin-top: 0; }
+
+/* ---------- 목록 선택·삭제 ---------- */
+.rowwrap { display: flex; align-items: center; gap: 10px; }
+.rowwrap .row { flex: 1; min-width: 0; }
+.rowwrap > .pick, .pickall input { width: 20px; height: 20px; flex: none; accent-color: var(--rec); }
+.rowwrap.head { align-items: center; }
+.pickall { display: flex; align-items: center; flex: none; width: 20px; }
+.selbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 18px; margin-bottom: 16px; }
+.selbar .warn, .top-tools .warn { color: var(--rec); font-weight: 700; font-size: 0.8125rem; }
+@media (max-width: 860px) { .rowwrap.head { display: none; } }
