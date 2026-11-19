@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>경기콘텐츠진흥원 로케이션 지원 관리 시스템</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="stylesheet" href="styles.css?v=9">
+</head>
+<body>
+  <div class="shell">
+    <aside class="side">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"><i></i></div>
+        <div>
+          <div class="brand-name">로케이션 지원<br>관리 시스템</div>
+          <div class="brand-sub">경기콘텐츠진흥원</div>
+        </div>
+      </div>
+      <nav class="nav" aria-label="주 메뉴" id="nav">
+        <a href="#/" data-r="dashboard"><span class="dot"></span>대시보드</a>
+        <a href="#/apps" data-r="apps"><span class="dot"></span>신청 목록</a>
+        <a href="#/new" data-r="new"><span class="dot"></span>신청 등록</a>
+        <a href="#/import" data-r="import"><span class="dot"></span>엑셀 등록·가져오기</a>
+        <a href="#/settings" data-r="settings"><span class="dot"></span>설정</a>
+      </nav>
+      <div class="who">
+        <label for="author">지금 쓰는 사람</label>
+        <select id="author"></select>
+        <button class="btn sm" type="button" data-logout style="justify-content:center;margin-top:6px">로그아웃</button>
+      </div>
+    </aside>
+    <main class="main" id="main" tabindex="-1"></main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div id="auth" class="auth" hidden></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="data.js?v=9"></script>
+  <script src="db.js?v=9"></script>
+  <script src="app.js?v=9"></script>
+</body>
+</html>
