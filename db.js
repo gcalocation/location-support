@@ -13,13 +13,13 @@ const appFromRow = (r, supports) => ({
   id: r.id, receivedAt: r.received_at, source: r.source, title: r.title, director: r.director, cast: r.cast_members, kind: r.kind, type: r.work_type, media: r.media, budget: r.budget,
   staff: r.staff_count, crankIn: r.crank_in || "", crankUp: r.crank_up || "", synopsis: r.synopsis, company: r.company,
   applicant: { name: r.applicant_name, role: r.applicant_role, phone: r.applicant_phone, email: r.applicant_email },
-  request: r.request, assignee: r.assignee, files: Array.isArray(r.files) ? r.files : [], drivePath: r.drive_path || "", supports,
+  request: r.request, assignee: r.assignee, files: Array.isArray(r.files) ? r.files : [], drivePath: r.drive_path || "", legacyNo: r.legacy_no || "", supports,
 });
 const appToRow = (a) => ({
   id: a.id, received_at: a.receivedAt, source: a.source, title: a.title, director: a.director || "-", cast_members: a.cast || "-", kind: a.kind, work_type: a.type, media: a.media || "-", budget: a.budget || "-",
   staff_count: Number(a.staff) || 0, crank_in: a.crankIn || null, crank_up: a.crankUp || null, synopsis: a.synopsis || "-", company: a.company,
   applicant_name: a.applicant.name, applicant_role: a.applicant.role || "-", applicant_phone: a.applicant.phone || "", applicant_email: a.applicant.email || "-",
-  request: a.request || "-", assignee: a.assignee || "", files: a.files || [], drive_path: a.drivePath || "",
+  request: a.request || "-", assignee: a.assignee || "", files: a.files || [], drive_path: a.drivePath || "", legacy_no: a.legacyNo || "",
 });
 const memoFromRow = (m) => ({ id: m.id, appNo: m.application_id, date: m.memo_date, author: m.author, method: m.method, category: m.category, region: m.region, text: m.body, statusChange: m.status_to ? { from: m.status_from || "", to: m.status_to } : null });
 const memoToRow = (m) => ({ id: m.id, application_id: m.appNo, memo_date: m.date, author: m.author, method: m.method, category: m.category, region: m.region || "", body: m.text, status_from: m.statusChange ? m.statusChange.from : null, status_to: m.statusChange ? m.statusChange.to : null });

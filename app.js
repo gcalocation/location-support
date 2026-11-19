@@ -57,9 +57,9 @@ function route(keepScroll) {
 }
 
 /* 신청 등록 때 입력하는 모든 항목 (목록 CSV·대시보드 엑셀 공통) */
-const APP_HEAD = ["접수번호", "접수일", "접수 경로", "작품명", "감독", "주연배우", "작품 구분", "작품 종류", "작품 내용", "크랭크인", "크랭크업", "스탭 인원 수", "예산 규모", "1차 배급 매체", "제작사명", "신청자 이름", "직책 또는 소속", "신청자 연락처", "신청자 이메일", "신청 지역", "지역별 상태", "지원 요청사항", "첨부파일", "진행 상태", "담당자"];
-const appRow = (a) => [a.id, a.receivedAt, a.source, a.title, a.director, a.cast, a.kind, a.type, a.synopsis, a.crankIn, a.crankUp, a.staff, a.budget, a.media, a.company, a.applicant.name, a.applicant.role, a.applicant.phone, a.applicant.email, a.supports.map((s) => s.region).join(", "), a.supports.map((s) => `${s.region}(${s.status})`).join(", "), a.request, a.files.map((f) => f.name).join(", "), appStatus(a), a.assignee];
-const APP_WIDTHS = [12, 12, 12, 28, 12, 20, 10, 16, 50, 12, 12, 10, 14, 12, 18, 10, 14, 14, 24, 24, 36, 40, 40, 10, 10];
+const APP_HEAD = ["접수번호", "접수일", "접수 경로", "작품명", "감독", "주연배우", "작품 구분", "작품 종류", "작품 내용", "크랭크인", "크랭크업", "스탭 인원 수", "예산 규모", "1차 배급 매체", "제작사명", "신청자 이름", "직책 또는 소속", "신청자 연락처", "신청자 이메일", "신청 지역", "지역별 상태", "지원 요청사항", "첨부파일", "진행 상태", "담당자", "시트 이전 번호"];
+const appRow = (a) => [a.id, a.receivedAt, a.source, a.title, a.director, a.cast, a.kind, a.type, a.synopsis, a.crankIn, a.crankUp, a.staff, a.budget, a.media, a.company, a.applicant.name, a.applicant.role, a.applicant.phone, a.applicant.email, a.supports.map((s) => s.region).join(", "), a.supports.map((s) => `${s.region}(${s.status})`).join(", "), a.request, a.files.map((f) => f.name).join(", "), appStatus(a), a.assignee, a.legacyNo || ""];
+const APP_WIDTHS = [12, 12, 12, 28, 12, 20, 10, 16, 50, 12, 12, 10, 14, 12, 18, 10, 14, 14, 24, 24, 36, 40, 40, 10, 10, 14];
 
 /* ---------- 대시보드 ---------- */
 const inRange = (iso, from, to) => !!iso && (!from || iso >= from) && (!to || iso <= to);
@@ -263,7 +263,7 @@ function vDetail(id) {
   return `
   <div class="crumb"><a class="btn sm" href="#/apps">← 신청 목록</a></div>
   <header class="top">
-    <div><h1>${esc(a.title)}</h1><p>${a.id} · ${esc(a.company)} · ${fdate(a.receivedAt)} 접수 · ${esc(a.source)}</p></div>
+    <div><h1>${esc(a.title)}</h1><p>${a.id} · ${esc(a.company)} · ${fdate(a.receivedAt)} 접수 · ${esc(a.source)}${a.legacyNo ? ` · 시트 번호 ${esc(a.legacyNo)}` : ""}</p></div>
     <div class="top-tools">${badge(st)}<label class="sr" for="asg">담당자</label><select id="asg" data-act="asg" style="width:150px">${opts(S.staff, a.assignee, "담당자 미지정")}</select></div>
   </header>
   <div class="detail">
@@ -464,7 +464,7 @@ function parseLegacy(wb) {
   const norm = (x) => String(x ?? "").replace(/\s+/g, "").toLowerCase(), map = new Map();
   sv.forEach((r) => { const k = norm(r["작품명"]) + "|" + norm(r["신청자 이름"]); if (!map.has(k)) map.set(k, []); map.get(k).push(r); });
   const dayOf = (v) => xlDate(typeof v === "number" ? Math.floor(v) : v);
-  const existing = new Set(S.apps.map((a) => a.id)), apps = [], skipped = [], warns = [], dups = [];
+  const existing = new Set(S.apps.map((a) => a.legacyNo).filter(Boolean)), apps = [], skipped = [], warns = [], dups = [];
   const g = (row, k) => (row ? String(row[k] ?? "").trim() : "");
   const dupKey = (title, name, day, req) => [norm(title), norm(name), day, norm(req).slice(0, 120)].join("|");
   const seenKey = new Set(S.apps.map((a) => dupKey(a.title, a.applicant.name, a.receivedAt, a.request)));
@@ -482,29 +482,33 @@ function parseLegacy(wb) {
     [["제작기획서(작품소개서), 촬영계획서", "제작기획서·촬영계획서"], ["시나리오, 스탭리스트, 장소구분표 등 기타자료", "시나리오·스탭리스트 등 기타자료"]].forEach(([col, label]) => { const u = safeUrl(g(s, col)); if (u) files.push({ name: label, url: u }); });
     let ph = g(r, "신청자 연락처"); if (/^\d{9,11}$/.test(ph) && !ph.startsWith("0")) ph = "0" + ph;
     if (!s) warns.push(id);
-    apps.push({ id, receivedAt: recv, source: "이관", title: g(r, "작품명"), director: g(s, "감독") || "-", cast: g(r, "배우") || g(s, "주연배우") || "-", kind: KINDS.includes(g(s, "작품구분")) ? g(s, "작품구분") : "국내", type: g(r, "작품종류") || g(s, "작품종류") || "기타", media: g(s, "1차 배급매체") || "-", budget: g(s, "예산규모") || "-", staff: Number(g(s, "스탭 인원 수")) || 0, crankIn: (s && xlDate(s["크랭크인"])) || "", crankUp: (s && xlDate(s["크랭크업"])) || "", synopsis: g(s, "작품내용") || "-", company: g(r, "제작사 명") || g(s, "제작사명") || "-", applicant: { name: g(r, "신청자 이름") || "-", role: g(r, "직책 또는 소속") || "-", phone: ph, email: g(r, "신청자 이메일") || "-" }, request: g(r, "지원 요청사항") || g(s, "지원 요청사항") || "-", supports: (regs.length ? regs : ["미정"]).map((x) => ({ region: x, status })), assignee: "", files, drivePath: g(r, "첨부파일") });
+    apps.push({ id, legacyNo: id, receivedAt: recv, source: "이관", title: g(r, "작품명"), director: g(s, "감독") || "-", cast: g(r, "배우") || g(s, "주연배우") || "-", kind: KINDS.includes(g(s, "작품구분")) ? g(s, "작품구분") : "국내", type: g(r, "작품종류") || g(s, "작품종류") || "기타", media: g(s, "1차 배급매체") || "-", budget: g(s, "예산규모") || "-", staff: Number(g(s, "스탭 인원 수")) || 0, crankIn: (s && xlDate(s["크랭크인"])) || "", crankUp: (s && xlDate(s["크랭크업"])) || "", synopsis: g(s, "작품내용") || "-", company: g(r, "제작사 명") || g(s, "제작사명") || "-", applicant: { name: g(r, "신청자 이름") || "-", role: g(r, "직책 또는 소속") || "-", phone: ph, email: g(r, "신청자 이메일") || "-" }, request: g(r, "지원 요청사항") || g(s, "지원 요청사항") || "-", supports: (regs.length ? regs : ["미정"]).map((x) => ({ region: x, status })), assignee: "", files, drivePath: g(r, "첨부파일") });
   });
   /* 진행관리에 아직 올라오지 않은 설문지 응답은 새 접수번호로 등록 */
   const pgKeys = new Set(pg.map((r) => norm(r["작품명"]) + "|" + norm(r["신청자 이름"])));
-  const maxNo = {};
-  [...existing, ...apps.map((a) => a.id)].forEach((id) => { const m = /^(\d{4})-(\d+)$/.exec(id); if (m) maxNo[m[1]] = Math.max(maxNo[m[1]] || 0, +m[2]); });
-  const fresh = [];
   sv.forEach((r) => {
     if (pgKeys.has(norm(r["작품명"]) + "|" + norm(r["신청자 이름"]))) return;
     const recv = dayOf(r["타임스탬프"]) || todayIso();
     const dk = dupKey(r["작품명"], r["신청자 이름"], recv, r["지원 요청사항"]);
     if (seenKey.has(dk)) { dups.push("응답 " + g(r, "작품명")); return; }
     seenKey.add(dk);
-    const y = recv.slice(0, 4); maxNo[y] = (maxNo[y] || 0) + 1;
-    const id = `${y}-${pad(maxNo[y]).padStart(3, "0")}`;
+    const id = "신규-" + (apps.length + 1);
     const regs = xlRegions(g(r, "신청 지역")).out, files = [];
     [["제작기획서(작품소개서), 촬영계획서", "제작기획서·촬영계획서"], ["시나리오, 스탭리스트, 장소구분표 등 기타자료", "시나리오·스탭리스트 등 기타자료"]].forEach(([col, label]) => { const u = safeUrl(g(r, col)); if (u) files.push({ name: label, url: u }); });
     let ph = g(r, "신청자 연락처"); if (/^\d{9,11}$/.test(ph) && !ph.startsWith("0")) ph = "0" + ph;
-    const a = { id, receivedAt: recv, source: "이관", title: g(r, "작품명"), director: g(r, "감독") || "-", cast: g(r, "주연배우") || "-", kind: KINDS.includes(g(r, "작품구분")) ? g(r, "작품구분") : "국내", type: g(r, "작품종류") || "기타", media: g(r, "1차 배급매체") || "-", budget: g(r, "예산규모") || "-", staff: Number(g(r, "스탭 인원 수")) || 0, crankIn: xlDate(r["크랭크인"]) || "", crankUp: xlDate(r["크랭크업"]) || "", synopsis: g(r, "작품내용") || "-", company: g(r, "제작사명") || "-", applicant: { name: g(r, "신청자 이름") || "-", role: g(r, "직책 또는 소속") || "-", phone: ph, email: g(r, "신청자 이메일") || "-" }, request: g(r, "지원 요청사항") || "-", supports: (regs.length ? regs : ["미정"]).map((x) => ({ region: x, status: "접수완료" })), assignee: "", files, drivePath: "" };
-    apps.push(a); fresh.push(id);
+    const a = { id, legacyNo: "", receivedAt: recv, source: "이관", title: g(r, "작품명"), director: g(r, "감독") || "-", cast: g(r, "주연배우") || "-", kind: KINDS.includes(g(r, "작품구분")) ? g(r, "작품구분") : "국내", type: g(r, "작품종류") || "기타", media: g(r, "1차 배급매체") || "-", budget: g(r, "예산규모") || "-", staff: Number(g(r, "스탭 인원 수")) || 0, crankIn: xlDate(r["크랭크인"]) || "", crankUp: xlDate(r["크랭크업"]) || "", synopsis: g(r, "작품내용") || "-", company: g(r, "제작사명") || "-", applicant: { name: g(r, "신청자 이름") || "-", role: g(r, "직책 또는 소속") || "-", phone: ph, email: g(r, "신청자 이메일") || "-" }, request: g(r, "지원 요청사항") || "-", supports: (regs.length ? regs : ["미정"]).map((x) => ({ region: x, status: "접수완료" })), assignee: "", files, drivePath: "" };
+    apps.push(a);
   });
-  const ids = new Set([...existing, ...apps.map((a) => a.id)]);
-  const memos = get("메모이력").filter((r) => String(r["메모내용"]).trim() && ids.has(String(r["신청번호"]).trim())).map((r) => ({ id: uuid(), appNo: String(r["신청번호"]).trim(), date: dayOf(r["날짜"]) || todayIso(), author: g(r, "작성자"), method: g(r, "진행방법") || "기타", category: g(r, "업무분류") || "기타", region: g(r, "지역"), text: g(r, "메모내용"), statusChange: null }));
+  /* 접수일 순서대로 접수번호를 새로 매긴다 (같은 날은 시트 순서). 이전 번호는 legacyNo에 남긴다 */
+  const maxNo = {}; S.apps.forEach((a) => { const m = /^(\d{4})-(\d+)$/.exec(a.id); if (m) maxNo[m[1]] = Math.max(maxNo[m[1]] || 0, +m[2]); });
+  const idMap = {};
+  apps.map((a, i) => [a, i]).sort((x, y) => (x[0].receivedAt === y[0].receivedAt ? x[1] - y[1] : x[0].receivedAt < y[0].receivedAt ? -1 : 1)).forEach(([a]) => {
+    const y = a.receivedAt.slice(0, 4); maxNo[y] = (maxNo[y] || 0) + 1;
+    const nid = `${y}-${pad(maxNo[y]).padStart(3, "0")}`; if (a.legacyNo) idMap[a.legacyNo] = nid; a.id = nid;
+  });
+  apps.sort((a, b) => (a.id < b.id ? -1 : 1));
+  const fresh = apps.filter((a) => !a.legacyNo).map((a) => a.id);
+  const memos = get("메모이력").filter((r) => String(r["메모내용"]).trim() && idMap[String(r["신청번호"]).trim()]).map((r) => ({ id: uuid(), appNo: idMap[String(r["신청번호"]).trim()], date: dayOf(r["날짜"]) || todayIso(), author: g(r, "작성자"), method: g(r, "진행방법") || "기타", category: g(r, "업무분류") || "기타", region: g(r, "지역"), text: g(r, "메모내용"), statusChange: null }));
   return { apps, skipped, warns, memos, dups, fresh };
 }
 function readLegacyFile(file) {
@@ -541,10 +545,10 @@ function vImport() {
   let legacy = "";
   const lg = view.legacy;
   if (lg) {
-    const withLinks = lg.apps.filter((a) => a.files.length).length, sample = lg.apps.slice(0, 8).map((a) => `<tr><td>${esc(a.id)}</td><td>${esc(a.title)}</td><td>${esc(a.applicant.name)}</td><td>${esc(a.receivedAt)}</td><td>${esc(a.supports.map((x) => x.region).join(", "))}</td></tr>`).join("");
+    const withLinks = lg.apps.filter((a) => a.files.length).length, sample = lg.apps.slice(0, 8).map((a) => `<tr><td>${esc(a.id)}</td><td>${esc(a.legacyNo || "신규")}</td><td>${esc(a.title)}</td><td>${esc(a.applicant.name)}</td><td>${esc(a.receivedAt)}</td><td>${esc(a.supports.map((x) => x.region).join(", "))}</td></tr>`).join("");
     legacy = `<section class="panel" style="margin-top:24px"><h2 class="panel-title">이관 미리보기: ${esc(lg.name)}</h2>
-      <p class="panel-note">신청 <b>${lg.apps.length}건</b>과 메모 <b>${lg.memos.length}건</b>을 옮겨요. 이미 있는 접수번호 ${lg.skipped.length}건은 건너뜁니다. <b>중복으로 보고 뺀 행 ${lg.dups.length}건</b>(같은 작품·신청자·접수일·요청 내용 반복), 진행관리에 없어 <b>새 접수번호로 등록하는 응답 ${lg.fresh.length}건</b>. 첨부 링크가 있는 신청 ${withLinks}건${lg.warns.length ? `, 신청서 원문을 찾지 못한 신청 ${lg.warns.length}건(감독·작품내용 등이 비어요)` : ""}. 아직 저장되지 않았어요.</p>
-      <div class="tblwrap"><table class="tbl"><thead><tr><th>접수번호</th><th>작품명</th><th>신청자</th><th>접수일</th><th>지역</th></tr></thead><tbody>${sample}</tbody></table></div>
+      <p class="panel-note">신청 <b>${lg.apps.length}건</b>과 메모 <b>${lg.memos.length}건</b>을 옮겨요. 이미 이관된 ${lg.skipped.length}건은 건너뜁니다. 접수번호는 접수일 순서로 새로 매기고 시트의 이전 번호는 따로 남겨요. <b>중복으로 보고 뺀 행 ${lg.dups.length}건</b>(같은 작품·신청자·접수일·요청 내용 반복), 진행관리에 없어 <b>새 접수번호로 등록하는 응답 ${lg.fresh.length}건</b>. 첨부 링크가 있는 신청 ${withLinks}건${lg.warns.length ? `, 신청서 원문을 찾지 못한 신청 ${lg.warns.length}건(감독·작품내용 등이 비어요)` : ""}. 아직 저장되지 않았어요.</p>
+      <div class="tblwrap"><table class="tbl"><thead><tr><th>새 접수번호</th><th>이전 번호</th><th>작품명</th><th>신청자</th><th>접수일</th><th>지역</th></tr></thead><tbody>${sample}</tbody></table></div>
       <div class="wiz-nav"><button class="btn" data-act="lgcancel">취소</button><button class="btn rec" data-act="lgcommit" ${lg.apps.length ? "" : "disabled"}><span class="rec-dot"></span>${lg.apps.length}건 이관하기</button></div></section>`;
   }
   return `<header class="top"><div><h1>엑셀 등록·가져오기</h1><p>엑셀 파일로 신청을 한꺼번에 등록하고, 기존 자료와 외부 접수 사이트를 연결합니다.</p></div></header>
