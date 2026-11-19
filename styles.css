@@ -306,3 +306,7 @@ a.nm:hover { text-decoration: underline; }
 .row.head { padding-top: 0; padding-bottom: 2px; }
 @media (max-width: 1100px) { .row { grid-template-columns: 84px 1.6fr 1fr 104px; } }
 @media (max-width: 860px) { .row { grid-template-columns: 1fr auto; padding: 10px 14px; } .row .cell { white-space: normal; } }
+
+/* ---------- 패널 머리글 (제목 + 수정 버튼) ---------- */
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.panel-head .panel-title { margin-bottom: 0; }

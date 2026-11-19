@@ -38,11 +38,12 @@ const badge = (s) => `<span class="badge" data-s="${esc(s)}">${esc(s)}</span>`;
 const opts = (list, sel, blank) => (blank ? `<option value="">${esc(blank)}</option>` : "") + list.map((x) => `<option ${x === sel ? "selected" : ""}>${esc(x)}</option>`).join("");
 
 /* ---------- 라우터 ---------- */
-const view = { filters: { q: "", year: "", region: "", type: "", category: "", status: "전체", sort: "latest", limit: 60 }, dashYear: String(new Date().getFullYear()), draft: null, step: 0, imp: null, exp: { from: `${new Date().getFullYear()}-01-01`, to: todayIso() } };
+const view = { filters: { q: "", year: "", region: "", type: "", category: "", status: "전체", sort: "latest", limit: 60 }, dashYear: String(new Date().getFullYear()), draft: null, step: 0, edit: null, imp: null, exp: { from: `${new Date().getFullYear()}-01-01`, to: todayIso() } };
 function route(keepScroll) {
   if (!S) return;
   const h = location.hash.replace(/^#/, "") || "/";
   const [, seg, arg] = h.split("/");
+  if (view.edit && !(seg === "apps" && decodeURIComponent(arg || "") === view.edit.id)) view.edit = null;
   const key = !seg ? "dashboard" : seg === "apps" && arg ? "apps" : seg;
   $$("#nav a").forEach((a) => (a.dataset.r === key ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
   const main = $("#main");
@@ -251,6 +252,79 @@ function vList() {
   `<div class="panel empty"><b>조건에 맞는 신청이 없습니다</b>검색어나 필터를 바꾸거나 초기화해 보세요.</div>`}`;
 }
 
+/* ---------- 작품 정보 · 신청자 정보 보기/수정 ---------- */
+const withCur = (list, cur) => (!cur || cur === "-" || list.includes(cur) ? list : [...list, cur]);
+const editing = (a, kind) => view.edit && view.edit.id === a.id && view.edit.kind === kind;
+const editField = (name, label, html, req, hint) => `<div class="field" data-f="${name}"><span>${label}${req ? "<em>*</em>" : ""}</span>${html}${hint ? `<small>${hint}</small>` : ""}<span class="err"></span></div>`;
+function workPanel(a) {
+  if (!editing(a, "work")) return `<section class="panel"><div class="panel-head"><h2 class="panel-title">작품 정보</h2><button class="btn sm" data-act="edit" data-v="work">수정</button></div><dl class="dl">
+    <dt>작품 종류</dt><dd>${esc(a.type)} (${esc(a.kind)})</dd><dt>감독</dt><dd>${esc(a.director)}</dd><dt>주연배우</dt><dd>${esc(a.cast)}</dd>
+    <dt>배급·예산</dt><dd>${esc(a.media)} · ${esc(a.budget)}</dd><dt>스탭 인원</dt><dd>${a.staff}명</dd><dt>촬영 기간</dt><dd>${fdate(a.crankIn)} ~ ${fdate(a.crankUp)}</dd>
+    <dt>작품 내용</dt><dd style="font-weight:500">${esc(a.synopsis)}</dd><dt>지원 요청</dt><dd style="font-weight:500">${esc(a.request)}</dd></dl></section>`;
+  const inp = (n, v, t = "text") => `<input type="${t}" name="${n}" value="${esc(v)}">`;
+  const sel = (n, list, cur, blank) => `<select name="${n}">${opts(withCur(list, cur), cur, blank)}</select>`;
+  return `<section class="panel"><div class="panel-head"><h2 class="panel-title">작품 정보 수정</h2></div>
+    <form id="editwork" class="form-grid" novalidate>
+      ${editField("title", "작품명", inp("title", a.title), 1)}${editField("type", "작품 종류", sel("type", TYPES, a.type), 1)}
+      ${editField("kind", "작품 구분", sel("kind", KINDS, a.kind))}${editField("director", "감독", inp("director", a.director === "-" ? "" : a.director))}
+      <div class="wide">${editField("cast", "주연배우", inp("cast", a.cast === "-" ? "" : a.cast))}</div>
+      ${editField("media", "1차 배급 매체", sel("media", MEDIA, a.media, "선택 안 함"))}${editField("budget", "예산 규모", sel("budget", BUDGETS, a.budget, "선택 안 함"))}
+      ${editField("staff", "스탭 인원 수", inp("staff", a.staff, "number"))}<div></div>
+      ${editField("crankIn", "크랭크인", inp("crankIn", a.crankIn, "date"))}${editField("crankUp", "크랭크업", inp("crankUp", a.crankUp, "date"))}
+      <div class="wide">${editField("synopsis", "작품 내용", `<textarea name="synopsis">${esc(a.synopsis === "-" ? "" : a.synopsis)}</textarea>`)}</div>
+      <div class="wide">${editField("request", "지원 요청사항", `<textarea name="request">${esc(a.request === "-" ? "" : a.request)}</textarea>`)}</div>
+      <div class="wide wiz-nav" style="margin-top:0"><button type="button" class="btn" data-act="editcancel">취소</button><button type="submit" class="btn rec">저장</button></div>
+    </form></section>`;
+}
+function applicantPanel(a) {
+  if (!editing(a, "app")) return `<section class="panel"><div class="panel-head"><h2 class="panel-title">신청자</h2><button class="btn sm" data-act="edit" data-v="app">수정</button></div><dl class="dl"><dt>제작사</dt><dd>${esc(a.company)}</dd><dt>이름</dt><dd>${esc(a.applicant.name)} (${esc(a.applicant.role)})</dd><dt>연락처</dt><dd>${esc(a.applicant.phone)}</dd><dt>이메일</dt><dd>${esc(a.applicant.email)}</dd></dl></section>`;
+  const inp = (n, v, t = "text") => `<input type="${t}" name="${n}" value="${esc(v)}">`;
+  return `<section class="panel"><div class="panel-head"><h2 class="panel-title">신청자 수정</h2></div>
+    <form id="editapp" class="form-grid" novalidate>
+      ${editField("company", "제작사명", inp("company", a.company === "-" ? "" : a.company), 1)}${editField("role", "직책 또는 소속", inp("role", a.applicant.role === "-" ? "" : a.applicant.role))}
+      ${editField("name", "신청자 이름", inp("name", a.applicant.name === "-" ? "" : a.applicant.name), 1)}${editField("phone", "연락처", inp("phone", a.applicant.phone, "tel"), 1)}
+      <div class="wide">${editField("email", "이메일", inp("email", a.applicant.email === "-" ? "" : a.applicant.email, "email"))}</div>
+      <div class="wide wiz-nav" style="margin-top:0"><button type="button" class="btn" data-act="editcancel">취소</button><button type="submit" class="btn rec">저장</button></div>
+    </form></section>`;
+}
+function showFormErrs(form, errs) {
+  $$("[data-f]", form).forEach((w) => { const m = errs[w.dataset.f]; w.classList.toggle("bad", !!m); $(".err", w).textContent = m || ""; });
+  const first = $(".bad input, .bad select, .bad textarea", form); if (first) first.focus();
+}
+function saveEdit(form) {
+  const a = curApp(); if (!a) return;
+  const fd = new FormData(form), v = (k) => String(fd.get(k) ?? "").trim(), errs = {};
+  const work = form.id === "editwork";
+  let patch, row, changed = [];
+  if (work) {
+    if (!v("title")) errs.title = "작품명을 입력해 주세요";
+    if (!v("type")) errs.type = "작품 종류를 선택해 주세요";
+    if (v("crankIn") && v("crankUp") && v("crankUp") < v("crankIn")) errs.crankUp = "크랭크업은 크랭크인보다 빠를 수 없어요";
+    if (v("staff") && Number(v("staff")) < 0) errs.staff = "0 이상의 숫자를 입력해 주세요";
+    patch = { title: v("title"), type: v("type"), kind: v("kind"), director: v("director") || "-", cast: v("cast") || "-", media: v("media") || "-", budget: v("budget") || "-", staff: Number(v("staff")) || 0, crankIn: v("crankIn"), crankUp: v("crankUp"), synopsis: v("synopsis") || "-", request: v("request") || "-" };
+    row = { title: patch.title, work_type: patch.type, kind: patch.kind, director: patch.director, cast_members: patch.cast, media: patch.media, budget: patch.budget, staff_count: patch.staff, crank_in: patch.crankIn || null, crank_up: patch.crankUp || null, synopsis: patch.synopsis, request: patch.request };
+    const labels = { title: "작품명", type: "작품 종류", kind: "작품 구분", director: "감독", cast: "주연배우", media: "배급 매체", budget: "예산 규모", staff: "스탭 인원", crankIn: "크랭크인", crankUp: "크랭크업", synopsis: "작품 내용", request: "지원 요청" };
+    Object.keys(labels).forEach((k) => { if (String(a[k] ?? "") !== String(patch[k] ?? "")) changed.push(labels[k]); });
+  } else {
+    if (!v("company")) errs.company = "제작사명을 입력해 주세요";
+    if (!v("name")) errs.name = "신청자 이름을 입력해 주세요";
+    if (!/^0\d{1,2}-?\d{3,4}-?\d{4}$/.test(v("phone").replace(/\s/g, ""))) errs.phone = "연락처를 확인해 주세요 (예: 010-1234-5678)";
+    if (v("email") && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v("email"))) errs.email = "이메일 형식을 확인해 주세요";
+    patch = { company: v("company"), role: v("role") || "-", name: v("name"), phone: v("phone"), email: v("email") || "-" };
+    row = { company: patch.company, applicant_role: patch.role, applicant_name: patch.name, applicant_phone: patch.phone, applicant_email: patch.email };
+    const cur = { company: a.company, role: a.applicant.role, name: a.applicant.name, phone: a.applicant.phone, email: a.applicant.email };
+    const labels = { company: "제작사", role: "직책·소속", name: "이름", phone: "연락처", email: "이메일" };
+    Object.keys(labels).forEach((k) => { if (cur[k] !== patch[k]) changed.push(labels[k]); });
+  }
+  if (Object.keys(errs).length) return showFormErrs(form, errs);
+  view.edit = null;
+  if (!changed.length) { route(true); return toast("바뀐 내용이 없어요"); }
+  if (work) Object.assign(a, patch); else { a.company = patch.company; a.applicant = { name: patch.name, role: patch.role, phone: patch.phone, email: patch.email }; }
+  const m = addMemo(a, { text: `${work ? "작품 정보" : "신청자 정보"} 수정: ${changed.join(", ")}` });
+  route(true);
+  dbRun(async () => { q(await sb.from("applications").update(row).eq("id", a.id)); await persistMemo(m); }, `${work ? "작품 정보" : "신청자 정보"}를 수정했어요`);
+}
+
 /* ---------- 신청 상세 ---------- */
 function vDetail(id) {
   const a = S.apps.find((x) => x.id === id);
@@ -270,11 +344,8 @@ function vDetail(id) {
     <div class="stack">
       <section class="panel"><h2 class="panel-title">지역별 지원 건</h2><p class="panel-note">지역마다 상태를 따로 관리합니다. 바꾸면 메모에도 자동으로 기록됩니다.</p>${supports}
         <div class="memo-form" style="grid-template-columns:1fr auto;align-items:end"><label class="field"><span>지역 추가</span><select id="addreg">${opts(REGIONS.filter((r) => !a.supports.some((s) => s.region === r)), "", "지역 선택")}</select></label><button class="btn sm" data-act="addreg" style="height:44px">추가</button></div></section>
-      <section class="panel"><h2 class="panel-title">작품 정보</h2><p class="panel-note">&nbsp;</p><dl class="dl">
-        <dt>작품 종류</dt><dd>${esc(a.type)} (${esc(a.kind)})</dd><dt>감독</dt><dd>${esc(a.director)}</dd><dt>주연배우</dt><dd>${esc(a.cast)}</dd>
-        <dt>배급·예산</dt><dd>${esc(a.media)} · ${esc(a.budget)}</dd><dt>스탭 인원</dt><dd>${a.staff}명</dd><dt>촬영 기간</dt><dd>${fdate(a.crankIn)} ~ ${fdate(a.crankUp)}</dd>
-        <dt>작품 내용</dt><dd style="font-weight:500">${esc(a.synopsis)}</dd><dt>지원 요청</dt><dd style="font-weight:500">${esc(a.request)}</dd></dl></section>
-      <section class="panel"><h2 class="panel-title">신청자</h2><p class="panel-note">&nbsp;</p><dl class="dl"><dt>이름</dt><dd>${esc(a.applicant.name)} (${esc(a.applicant.role)})</dd><dt>연락처</dt><dd>${esc(a.applicant.phone)}</dd><dt>이메일</dt><dd>${esc(a.applicant.email)}</dd></dl></section>
+      ${workPanel(a)}
+      ${applicantPanel(a)}
       <section class="panel"><h2 class="panel-title">첨부파일</h2><p class="panel-note">구글 드라이브 파일의 공유 링크를 붙여 넣어 연결합니다.</p><ul class="files">${files}</ul>
         ${a.drivePath ? `<p class="panel-note" style="margin:12px 0 0">드라이브 폴더 경로: ${esc(a.drivePath)}</p>` : ""}
         <form id="flink" class="flink" novalidate><label class="field"><span>이름</span><input type="text" name="fname" placeholder="예: 촬영계획서"></label><label class="field"><span>링크</span><input type="url" name="furl" placeholder="https://drive.google.com/..."></label><button class="btn sm" type="submit" style="height:44px">링크 추가</button></form></section>
@@ -597,6 +668,8 @@ document.addEventListener("click", (e) => {
   else if (act === "xlcommit") commitImport();
   else if (act === "xlcancel") { view.imp = null; route(); }
   else if (act === "lgcommit") commitLegacy();
+  else if (act === "edit") { const a = curApp(); if (a) { view.edit = { id: a.id, kind: el.dataset.v }; route(true); const f = $(el.dataset.v === "work" ? "#editwork input" : "#editapp input"); if (f) f.focus(); } }
+  else if (act === "editcancel") { view.edit = null; route(true); }
   else if (act === "lgcancel") { view.legacy = null; route(); }
   else if (act === "reg") { readStep(); const r = el.dataset.v, d = view.draft; d.regions = d.regions.includes(r) ? d.regions.filter((x) => x !== r) : [...d.regions, r]; el.setAttribute("aria-pressed", d.regions.includes(r)); if (d.regions.length) { d.undecided = false; const c = $('#wiz [name="undecided"]'); if (c) c.checked = false; } }
   else if (act === "prev") { readStep(); view.step--; route(); }
@@ -628,6 +701,7 @@ document.addEventListener("submit", (e) => {
     let sc = null; if (ns) { const sp = a.supports.find((x) => x.region === rg); if (sp && sp.status !== ns) { sc = { from: sp.status, to: ns }; sp.status = ns; } }
     const m = addMemo(a, { date, method: fd.get("method"), category: fd.get("category"), region: rg, text, statusChange: sc }); route();
     dbRun(async () => { if (sc) q(await sb.from("supports").update({ status: ns }).eq("application_id", a.id).eq("region", rg)); await persistMemo(m); }, sc ? `메모를 저장하고 ${rg}을(를) ${ns}로 바꿨어요` : "메모를 저장했어요"); }
+  else if (f.id === "editwork" || f.id === "editapp") { e.preventDefault(); saveEdit(f); }
   else if (f.id === "flink") { e.preventDefault(); const a = curApp(), fd = new FormData(f), url = safeUrl(fd.get("furl")), name = (fd.get("fname") || "").trim() || "첨부파일"; if (!url) return toast("http(s)로 시작하는 링크를 넣어 주세요"); a.files = [...a.files, { name, url }]; const files = a.files; route(); dbRun(async () => q(await sb.from("applications").update({ files }).eq("id", a.id)), "첨부 링크를 추가했어요"); }
   else if (f.id === "staff") { e.preventDefault(); const fd = new FormData(f); const names = S.staff.map((_, i) => (fd.get("s" + i) || "").trim() || S.staff[i]); const map = Object.fromEntries(S.staff.map((o, i) => [o, names[i]])); S.apps.forEach((a) => (a.assignee = map[a.assignee] || a.assignee)); S.memos.forEach((m) => (m.author = map[m.author] || m.author)); S.author = map[S.author] || names[0]; S.staff = names; fillAuthor(); route();
     dbRun(async () => { q(await sb.from("settings").upsert({ key: "staff", value: names })); for (const [o, n] of Object.entries(map)) if (o !== n) { q(await sb.from("applications").update({ assignee: n }).eq("assignee", o)); q(await sb.from("memos").update({ author: n }).eq("author", o)); } }, "담당자 이름을 저장했어요"); }
