@@ -466,9 +466,9 @@ function parseLegacy(wb) {
   const dayOf = (v) => xlDate(typeof v === "number" ? Math.floor(v) : v);
   const existing = new Set(S.apps.map((a) => a.id)), apps = [], skipped = [], warns = [], dups = [];
   const g = (row, k) => (row ? String(row[k] ?? "").trim() : "");
-  const seenKey = new Set();
-  /* 같은 작품·신청자·접수일·요청 내용이 반복된 행은 시트의 중복 생성 오류로 보고 첫 행만 남긴다 */
   const dupKey = (title, name, day, req) => [norm(title), norm(name), day, norm(req).slice(0, 120)].join("|");
+  const seenKey = new Set(S.apps.map((a) => dupKey(a.title, a.applicant.name, a.receivedAt, a.request)));
+  /* 같은 작품·신청자·접수일·요청 내용이 반복된 행은 시트의 중복 생성 오류로 보고 첫 행만 남긴다 */
   pg.forEach((r) => {
     const id = String(r["신청번호"]).trim();
     if (existing.has(id)) { skipped.push(id); return; }
