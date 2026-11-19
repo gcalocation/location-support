@@ -1,7 +1,7 @@
 /* Supabase 연결, 로그인, 데이터 읽기·쓰기 */
-const SB_URL = "https://hjeibuahkxvtqylycukl.supabase.co";
-/* 공개용(anon) 키입니다. 데이터 보호는 DB의 접근 규칙(RLS)과 허용 이메일 목록이 맡습니다. */
-const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhqZWlidWFoa3h2dHF5bHljdWtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUwMDU5NzksImV4cCI6MjExMDU4MTk3OX0.OUCQst7XUNjgcNsgyv5Kog2W-85WaMfp5MsJwsk8rOQ";
+const SB_URL = "https://ldvjtujmzqfaoiljwtbe.supabase.co";
+/* 공개용(publishable) 키입니다. 데이터 보호는 DB의 접근 규칙(RLS)과 허용 이메일 목록이 맡습니다. */
+const SB_KEY = "sb_publishable_NdR_WTTTiHGxKjOcTl2xpQ_yuOVPQ8o";
 const sb = window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
 const AUTHOR_KEY = "loc-author";
 
